@@ -4,6 +4,12 @@ let img = new Image();
 let currentColor = '#000000';
 let originalFileName = ''; // Add variable to store original filename
 
+// Variables for handling display vs original dimensions
+let originalImage = null;
+let displayScale = 1;
+const MAX_DISPLAY_WIDTH = 800;
+const MAX_DISPLAY_HEIGHT = 600;
+
 // Color button functionality
 document.addEventListener('DOMContentLoaded', function() {
     // Color buttons
@@ -106,12 +112,38 @@ document.getElementById('imageInput').addEventListener('change', function(e) {
         reader.onload = function(event) {
             img.src = event.target.result;
             img.onload = function() {
-                // Set canvas size
-                canvas.width = img.width;
-                canvas.height = img.height;
+                // Store original image
+                originalImage = img;
                 
-                // Draw image
-                ctx.drawImage(img, 0, 0);
+                // Calculate display dimensions and scale
+                const originalWidth = img.width;
+                const originalHeight = img.height;
+                
+                let displayWidth = originalWidth;
+                let displayHeight = originalHeight;
+                
+                // Scale down if image is too large for display
+                if (originalWidth > MAX_DISPLAY_WIDTH || originalHeight > MAX_DISPLAY_HEIGHT) {
+                    const widthRatio = MAX_DISPLAY_WIDTH / originalWidth;
+                    const heightRatio = MAX_DISPLAY_HEIGHT / originalHeight;
+                    displayScale = Math.min(widthRatio, heightRatio);
+                    
+                    displayWidth = originalWidth * displayScale;
+                    displayHeight = originalHeight * displayScale;
+                } else {
+                    displayScale = 1;
+                }
+                
+                // Set canvas size to display dimensions
+                canvas.width = displayWidth;
+                canvas.height = displayHeight;
+                
+                // Set canvas style for better appearance
+                canvas.style.maxWidth = '100%';
+                canvas.style.height = 'auto';
+                
+                // Draw image scaled to display size
+                ctx.drawImage(img, 0, 0, displayWidth, displayHeight);
                 
                 // Show canvas and hide placeholder
                 canvas.style.display = 'block';
@@ -136,36 +168,39 @@ function applyWatermark() {
     const position = document.getElementById('position').value;
 
     // Check if image is loaded
-    if (!img.complete || img.naturalWidth === 0) {
+    if (!originalImage || !originalImage.complete || originalImage.naturalWidth === 0) {
         alert('لطفا ابتدا یک عکس آپلود کنید');
         return;
     }
 
-    // Clear canvas and redraw image
+    // Clear canvas and redraw image scaled to display size
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-    ctx.drawImage(img, 0, 0);
+    ctx.drawImage(originalImage, 0, 0, canvas.width, canvas.height);
 
+    // Calculate scaled font size for display
+    const displayFontSize = fontSize * displayScale;
+    
     // Set watermark style
-    ctx.font = `${fontSize}px Arial`;
+    ctx.font = `${displayFontSize}px Arial`;
     ctx.fillStyle = currentColor;
     ctx.globalAlpha = opacity;
 
-    // Calculate positions
+    // Calculate positions based on display canvas
     const textWidth = ctx.measureText(watermarkText).width;
-    const textHeight = parseInt(fontSize);
+    const textHeight = displayFontSize;
 
     function drawWatermark(x, y) {
         // Save the current context state
         ctx.save();
         
         // Move to the position where we want to draw the text
-        ctx.translate(x + textWidth / 2, y - textHeight / 2);
+        ctx.translate(x, y);
         
         // Apply rotation (convert degrees to radians)
         ctx.rotate((rotation * Math.PI) / 180);
         
-        // Draw the text centered at the origin
-        ctx.fillText(watermarkText, -textWidth / 2, textHeight / 2);
+        // Draw the text at the translated position
+        ctx.fillText(watermarkText, 0, 0);
         
         // Restore the context state
         ctx.restore();
@@ -175,11 +210,12 @@ function applyWatermark() {
     let watermarkCount;
     if (position === 'full-image') {
         // Calculate optimal number of watermarks to fill the entire image
-        const spacingX = textWidth * 2; // Horizontal spacing between watermarks
-        const spacingY = textHeight * 2; // Vertical spacing between watermarks
+        const padding = 20;
+        const spacingX = Math.max(textWidth + 50, 100);
+        const spacingY = Math.max(textHeight + 30, 50);
         
-        const cols = Math.ceil(canvas.width / spacingX);
-        const rows = Math.ceil(canvas.height / spacingY);
+        const cols = Math.max(1, Math.floor((canvas.width - 2 * padding) / spacingX) + 1);
+        const rows = Math.max(1, Math.floor((canvas.height - 2 * padding) / spacingY) + 1);
         watermarkCount = cols * rows;
     } else {
         watermarkCount = parseInt(document.getElementById('watermarkCount').value);
@@ -187,49 +223,83 @@ function applyWatermark() {
 
     if (position === 'center') {
         for (let i = 0; i < watermarkCount; i++) {
-            drawWatermark(
-                canvas.width / 2 - textWidth / 2,
-                canvas.height / 2 - textHeight / 2 + i * (textHeight + 10)
-            );
+            const centerX = canvas.width / 2;
+            const centerY = canvas.height / 2 + i * (textHeight + 10);
+            // Ensure watermark stays within bounds
+            const adjustedY = Math.max(textHeight, Math.min(centerY, canvas.height - 10));
+            drawWatermark(centerX, adjustedY);
         }
     } else if (position === 'top-left') {
         for (let i = 0; i < watermarkCount; i++) {
-            drawWatermark(10, 10 + i * (textHeight + 10));
+            const x = 10;
+            const y = textHeight + 10 + i * (textHeight + 10);
+            // Ensure watermark doesn't go below canvas
+            if (y <= canvas.height - 10) {
+                drawWatermark(x, y);
+            }
         }
     } else if (position === 'top-right') {
         for (let i = 0; i < watermarkCount; i++) {
-            drawWatermark(canvas.width - textWidth - 10, 10 + i * (textHeight + 10));
+            const x = canvas.width - 10;
+            const y = textHeight + 10 + i * (textHeight + 10);
+            // Ensure watermark doesn't go below canvas
+            if (y <= canvas.height - 10) {
+                drawWatermark(x, y);
+            }
         }
     } else if (position === 'bottom-left') {
         for (let i = 0; i < watermarkCount; i++) {
-            drawWatermark(10, canvas.height - textHeight - 10 - i * (textHeight + 10));
+            const x = 10;
+            const y = canvas.height - 10 - i * (textHeight + 10);
+            // Ensure watermark doesn't go above canvas
+            if (y >= textHeight + 10) {
+                drawWatermark(x, y);
+            }
         }
     } else if (position === 'bottom-right') {
         for (let i = 0; i < watermarkCount; i++) {
-            drawWatermark(
-                canvas.width - textWidth - 10,
-                canvas.height - textHeight - 10 - i * (textHeight + 10)
-            );
+            const x = canvas.width - 10;
+            const y = canvas.height - 10 - i * (textHeight + 10);
+            // Ensure watermark doesn't go above canvas
+            if (y >= textHeight + 10) {
+                drawWatermark(x, y);
+            }
         }
     } else if (position === 'random') {
         for (let i = 0; i < watermarkCount; i++) {
-            const x = Math.random() * (canvas.width - textWidth);
-            const y = Math.random() * (canvas.height - textHeight);
+            // Add padding to ensure watermarks don't touch edges
+            const padding = 20;
+            const maxX = Math.max(padding, canvas.width - padding);
+            const maxY = Math.max(textHeight + padding, canvas.height - padding);
+            
+            const x = Math.random() * (maxX - padding) + padding;
+            const y = Math.random() * (maxY - textHeight - padding) + textHeight + padding;
             drawWatermark(x, y);
         }
     } else if (position === 'full-image') {
         // Fill entire image with watermarks in a grid pattern
-        const spacingX = textWidth * 2; // Horizontal spacing
-        const spacingY = textHeight * 2; // Vertical spacing
+        const padding = 20;
+        const spacingX = Math.max(textWidth + 50, 100); // Minimum spacing between watermarks
+        const spacingY = Math.max(textHeight + 30, 50); // Minimum spacing between watermarks
         
-        const cols = Math.ceil(canvas.width / spacingX);
-        const rows = Math.ceil(canvas.height / spacingY);
+        // Calculate how many watermarks can fit with proper spacing
+        const cols = Math.max(1, Math.floor((canvas.width - 2 * padding) / spacingX) + 1);
+        const rows = Math.max(1, Math.floor((canvas.height - 2 * padding) / spacingY) + 1);
+        
+        // Calculate actual spacing to distribute evenly
+        const actualSpacingX = cols > 1 ? (canvas.width - 2 * padding) / (cols - 1) : 0;
+        const actualSpacingY = rows > 1 ? (canvas.height - 2 * padding) / (rows - 1) : 0;
         
         for (let row = 0; row < rows; row++) {
             for (let col = 0; col < cols; col++) {
-                const x = col * spacingX;
-                const y = row * spacingY;
-                drawWatermark(x, y);
+                const x = cols > 1 ? padding + col * actualSpacingX : canvas.width / 2;
+                const y = rows > 1 ? padding + textHeight + row * actualSpacingY : canvas.height / 2;
+                
+                // Ensure watermark is within bounds
+                if (x >= padding && x <= canvas.width - padding && 
+                    y >= textHeight + padding && y <= canvas.height - padding) {
+                    drawWatermark(x, y);
+                }
             }
         }
     }
@@ -239,15 +309,160 @@ function applyWatermark() {
 
 function downloadImage() {
     // Check if image is loaded
-    if (!img.complete || img.naturalWidth === 0) {
+    if (!originalImage || !originalImage.complete || originalImage.naturalWidth === 0) {
         alert('لطفا ابتدا یک عکس آپلود کنید');
         return;
     }
 
+    // Create a temporary canvas with original image dimensions
+    const tempCanvas = document.createElement('canvas');
+    const tempCtx = tempCanvas.getContext('2d');
+    
+    tempCanvas.width = originalImage.width;
+    tempCanvas.height = originalImage.height;
+    
+    // Draw original image at full resolution
+    tempCtx.drawImage(originalImage, 0, 0);
+    
+    // Get watermark settings
+    const watermarkText = document.getElementById('watermarkText').value;
+    const fontSize = document.getElementById('fontSize').value;
+    const opacity = document.getElementById('opacity').value;
+    const rotation = document.getElementById('rotation').value;
+    const position = document.getElementById('position').value;
+    
+    // Set watermark style at original scale
+    tempCtx.font = `${fontSize}px Arial`;
+    tempCtx.fillStyle = currentColor;
+    tempCtx.globalAlpha = opacity;
+    
+    // Calculate positions for original canvas
+    const textWidth = tempCtx.measureText(watermarkText).width;
+    const textHeight = parseInt(fontSize);
+    
+    function drawWatermarkOriginal(x, y) {
+        // Save the current context state
+        tempCtx.save();
+        
+        // Move to the position where we want to draw the text
+        tempCtx.translate(x, y);
+        
+        // Apply rotation (convert degrees to radians)
+        tempCtx.rotate((rotation * Math.PI) / 180);
+        
+        // Draw the text at the translated position
+        tempCtx.fillText(watermarkText, 0, 0);
+        
+        // Restore the context state
+        tempCtx.restore();
+    }
+    
+    // Calculate watermark count based on position
+    let watermarkCount;
+    if (position === 'full-image') {
+        // Calculate optimal number of watermarks to fill the entire image
+        const padding = 20;
+        const spacingX = Math.max(textWidth + 50, 100);
+        const spacingY = Math.max(textHeight + 30, 50);
+        
+        const cols = Math.max(1, Math.floor((tempCanvas.width - 2 * padding) / spacingX) + 1);
+        const rows = Math.max(1, Math.floor((tempCanvas.height - 2 * padding) / spacingY) + 1);
+        watermarkCount = cols * rows;
+    } else {
+        watermarkCount = parseInt(document.getElementById('watermarkCount').value);
+    }
+
+    // Apply watermarks at original resolution
+    if (position === 'center') {
+        for (let i = 0; i < watermarkCount; i++) {
+            const centerX = tempCanvas.width / 2;
+            const centerY = tempCanvas.height / 2 + i * (textHeight + 10);
+            // Ensure watermark stays within bounds
+            const adjustedY = Math.max(textHeight, Math.min(centerY, tempCanvas.height - 10));
+            drawWatermarkOriginal(centerX, adjustedY);
+        }
+    } else if (position === 'top-left') {
+        for (let i = 0; i < watermarkCount; i++) {
+            const x = 10;
+            const y = textHeight + 10 + i * (textHeight + 10);
+            // Ensure watermark doesn't go below canvas
+            if (y <= tempCanvas.height - 10) {
+                drawWatermarkOriginal(x, y);
+            }
+        }
+    } else if (position === 'top-right') {
+        for (let i = 0; i < watermarkCount; i++) {
+            const x = tempCanvas.width - 10;
+            const y = textHeight + 10 + i * (textHeight + 10);
+            // Ensure watermark doesn't go below canvas
+            if (y <= tempCanvas.height - 10) {
+                drawWatermarkOriginal(x, y);
+            }
+        }
+    } else if (position === 'bottom-left') {
+        for (let i = 0; i < watermarkCount; i++) {
+            const x = 10;
+            const y = tempCanvas.height - 10 - i * (textHeight + 10);
+            // Ensure watermark doesn't go above canvas
+            if (y >= textHeight + 10) {
+                drawWatermarkOriginal(x, y);
+            }
+        }
+    } else if (position === 'bottom-right') {
+        for (let i = 0; i < watermarkCount; i++) {
+            const x = tempCanvas.width - 10;
+            const y = tempCanvas.height - 10 - i * (textHeight + 10);
+            // Ensure watermark doesn't go above canvas
+            if (y >= textHeight + 10) {
+                drawWatermarkOriginal(x, y);
+            }
+        }
+    } else if (position === 'random') {
+        for (let i = 0; i < watermarkCount; i++) {
+            // Add padding to ensure watermarks don't touch edges
+            const padding = 20;
+            const maxX = Math.max(padding, tempCanvas.width - padding);
+            const maxY = Math.max(textHeight + padding, tempCanvas.height - padding);
+            
+            const x = Math.random() * (maxX - padding) + padding;
+            const y = Math.random() * (maxY - textHeight - padding) + textHeight + padding;
+            drawWatermarkOriginal(x, y);
+        }
+    } else if (position === 'full-image') {
+        // Fill entire image with watermarks in a grid pattern
+        const padding = 20;
+        const spacingX = Math.max(textWidth + 50, 100); // Minimum spacing between watermarks
+        const spacingY = Math.max(textHeight + 30, 50); // Minimum spacing between watermarks
+        
+        // Calculate how many watermarks can fit with proper spacing
+        const cols = Math.max(1, Math.floor((tempCanvas.width - 2 * padding) / spacingX) + 1);
+        const rows = Math.max(1, Math.floor((tempCanvas.height - 2 * padding) / spacingY) + 1);
+        
+        // Calculate actual spacing to distribute evenly
+        const actualSpacingX = cols > 1 ? (tempCanvas.width - 2 * padding) / (cols - 1) : 0;
+        const actualSpacingY = rows > 1 ? (tempCanvas.height - 2 * padding) / (rows - 1) : 0;
+        
+        for (let row = 0; row < rows; row++) {
+            for (let col = 0; col < cols; col++) {
+                const x = cols > 1 ? padding + col * actualSpacingX : tempCanvas.width / 2;
+                const y = rows > 1 ? padding + textHeight + row * actualSpacingY : tempCanvas.height / 2;
+                
+                // Ensure watermark is within bounds
+                if (x >= padding && x <= tempCanvas.width - padding && 
+                    y >= textHeight + padding && y <= tempCanvas.height - padding) {
+                    drawWatermarkOriginal(x, y);
+                }
+            }
+        }
+    }
+    
+    tempCtx.globalAlpha = 1.0; // Reset opacity
+    
+    // Download the image
     const link = document.createElement('a');
     // Use original filename + "Watermarked" if available, otherwise use default
     const downloadName = originalFileName ? `${originalFileName}_Watermarked.png` : 'watermarked-image.png';
     link.download = downloadName;
-    link.href = canvas.toDataURL('image/png');
+    link.href = tempCanvas.toDataURL('image/png');
     link.click();
 }
