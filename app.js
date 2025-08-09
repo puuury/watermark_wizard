@@ -10,6 +10,36 @@ let displayScale = 1;
 const MAX_DISPLAY_WIDTH = 800;
 const MAX_DISPLAY_HEIGHT = 600;
 
+// Font management
+let currentFont = 'Arial';
+const loadedFonts = new Set(['Arial']); // Arial is always available
+
+// Function to load Google Fonts dynamically
+function loadGoogleFont(fontName) {
+    if (loadedFonts.has(fontName)) {
+        return Promise.resolve();
+    }
+    
+    return new Promise((resolve, reject) => {
+        // Create a link element for the Google Font
+        const link = document.createElement('link');
+        link.href = `https://fonts.googleapis.com/css2?family=${fontName.replace(/\s+/g, '+')}:wght@300;400;700&display=swap`;
+        link.rel = 'stylesheet';
+        
+        link.onload = () => {
+            loadedFonts.add(fontName);
+            resolve();
+        };
+        
+        link.onerror = () => {
+            console.warn(`Failed to load font: ${fontName}`);
+            reject();
+        };
+        
+        document.head.appendChild(link);
+    });
+}
+
 // Color button functionality
 document.addEventListener('DOMContentLoaded', function() {
     // Color buttons
@@ -38,6 +68,8 @@ document.addEventListener('DOMContentLoaded', function() {
                 watermarkColor.value = currentColor;
                 hexColorInput.value = currentColor;
                 customColorInput.style.display = 'none';
+                // Auto-apply watermark with new color
+                autoApplyWatermark();
             });
         }
     });
@@ -53,6 +85,7 @@ document.addEventListener('DOMContentLoaded', function() {
     watermarkColor.addEventListener('input', function() {
         currentColor = this.value;
         hexColorInput.value = currentColor;
+        autoApplyWatermark();
     });
 
     // Hex input change
@@ -61,6 +94,7 @@ document.addEventListener('DOMContentLoaded', function() {
         if (/^#[0-9A-F]{6}$/i.test(hexValue)) {
             currentColor = hexValue;
             watermarkColor.value = hexValue;
+            autoApplyWatermark();
         }
     });
 
@@ -92,6 +126,34 @@ document.addEventListener('DOMContentLoaded', function() {
             watermarkCountInput.disabled = false;
             watermarkCountInput.style.opacity = '1';
             watermarkCountInput.style.cursor = 'auto';
+        }
+    });
+
+    // Font family selector
+    const fontFamilySelect = document.getElementById('fontFamily');
+    
+    fontFamilySelect.addEventListener('change', async function() {
+        const selectedFont = this.value;
+        currentFont = selectedFont;
+        
+        // Load the font if it's not Arial
+        if (selectedFont !== 'Arial') {
+            try {
+                await loadGoogleFont(selectedFont);
+                // Wait a bit for the font to be fully loaded
+                setTimeout(() => {
+                    // Auto-apply watermark with new font
+                    autoApplyWatermark();
+                }, 100);
+            } catch (error) {
+                console.error('Failed to load font:', selectedFont);
+                // Fallback to Arial
+                currentFont = 'Arial';
+                fontFamilySelect.value = 'Arial';
+            }
+        } else {
+            // Auto-apply watermark immediately for Arial
+            autoApplyWatermark();
         }
     });
 
@@ -149,11 +211,8 @@ document.getElementById('imageInput').addEventListener('change', function(e) {
                 canvas.style.display = 'block';
                 document.getElementById('uploadPlaceholder').style.display = 'none';
                 
-                // Apply watermark if text exists
-                const watermarkText = document.getElementById('watermarkText').value;
-                if (watermarkText.trim()) {
-                    applyWatermark();
-                }
+                // Auto-apply watermark if text exists
+                autoApplyWatermark();
             };
         };
         reader.readAsDataURL(file);
@@ -181,7 +240,7 @@ function applyWatermark() {
     const displayFontSize = fontSize * displayScale;
     
     // Set watermark style
-    ctx.font = `${displayFontSize}px Arial`;
+    ctx.font = `${displayFontSize}px "${currentFont}", Arial`;
     ctx.fillStyle = currentColor;
     ctx.globalAlpha = opacity;
 
@@ -332,7 +391,7 @@ function downloadImage() {
     const position = document.getElementById('position').value;
     
     // Set watermark style at original scale
-    tempCtx.font = `${fontSize}px Arial`;
+    tempCtx.font = `${fontSize}px "${currentFont}", Arial`;
     tempCtx.fillStyle = currentColor;
     tempCtx.globalAlpha = opacity;
     
@@ -466,3 +525,28 @@ function downloadImage() {
     link.href = tempCanvas.toDataURL('image/png');
     link.click();
 }
+
+// Apply watermark automatically on any control change
+function autoApplyWatermark() {
+    if (originalImage) {
+        const watermarkText = document.getElementById('watermarkText').value;
+        if (watermarkText.trim()) {
+            applyWatermark();
+        } else {
+            // If no text, just show the image without watermark
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.drawImage(originalImage, 0, 0, canvas.width, canvas.height);
+        }
+    }
+}
+
+// Add auto-apply to all watermark controls
+['watermarkText', 'fontSize', 'opacity', 'rotation', 'position', 'watermarkCount', 'fontFamily'].forEach(id => {
+    const element = document.getElementById(id);
+    if (element) {
+        element.addEventListener('input', autoApplyWatermark);
+        element.addEventListener('change', autoApplyWatermark);
+    }
+});
+
+// Add auto-apply to color buttons (handled in DOMContentLoaded above)
